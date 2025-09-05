@@ -5,8 +5,11 @@ import type { CalendarProps } from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import './style.css';
 import { format, isWithinInterval, parseISO } from 'date-fns';
-
-import { db } from './firebase';
+import {
+    onAuthStateChanged,
+    signOut,
+} from "firebase/auth";
+import { auth, db } from "./firebase";
 import {
     collection,
     addDoc,
@@ -14,27 +17,32 @@ import {
     doc,
     onSnapshot,
     query,
-    orderBy
+    orderBy,
+    where
 } from 'firebase/firestore';
+import Login from "./Login";
 
 // Типы событий
-type EventType = "trip" | "concert" | "hiking";
+type EventType = "trip" | "concert" | "hiking" | "other";
 const eventTypes: { value: EventType; label: string }[] = [
     { value: "trip", label: "Поездка ✈️" },
     { value: "concert", label: "Концерт 🎵" },
     { value: "hiking", label: "Хайкинг 🥾" },
+    { value: "other", label: "Другое 📝" },
 ];
 
 interface EventItem {
-    id: string; // Используем id от Firestore
+    id: string;
     title: string;
     startDate: string;
     endDate?: string;
     note: string;
     type: EventType;
+    user?: string; // Добавляем поле user
 }
 
 export default function App() {
+    const [user, setUser] = useState<any>(null);
     const [events, setEvents] = useState<EventItem[]>([]);
     const [form, setForm] = useState<Omit<EventItem, "id">>({
         title: '',
@@ -42,30 +50,44 @@ export default function App() {
         endDate: '',
         note: '',
         type: "trip",
+        user: ''
     });
 
     const [selectedDate, setSelectedDate] = useState<CalendarProps['value']>(new Date());
 
-    // Подписка на события из Firestore
+    // Следим за авторизацией
     useEffect(() => {
-        const q = query(collection(db, "events"), orderBy("startDate"));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const items: EventItem[] = snapshot.docs.map(docSnap => ({
-                id: docSnap.id,
-                ...docSnap.data()
-            } as EventItem));
-            setEvents(items);
+        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+            setUser(currentUser);
         });
         return () => unsubscribe();
     }, []);
 
+    // Загрузка событий из Firestore
+    useEffect(() => {
+        if (!user) return;
+        const q = query(
+            collection(db, "events"),
+            where("user", "==", user.uid),
+            orderBy("startDate")
+        );
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const loadedEvents: EventItem[] = snapshot.docs.map((doc) => ({
+                id: doc.id,
+                ...(doc.data() as EventItem),
+            }));
+            setEvents(loadedEvents);
+        });
+        return () => unsubscribe();
+    }, [user]);
+
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
-        if (!form.title || !form.startDate) return;
+        if (!form.title || !form.startDate || !user) return;
 
         try {
-            await addDoc(collection(db, "events"), form);
-            setForm({ title: '', startDate: '', endDate: '', note: '', type: "trip" });
+            await addDoc(collection(db, "events"), { ...form, user: user.uid });
+            setForm({ title: '', startDate: '', endDate: '', note: '', type: "trip", user: '' });
         } catch (err) {
             console.error("Ошибка добавления события:", err);
         }
@@ -77,6 +99,10 @@ export default function App() {
         } catch (err) {
             console.error("Ошибка удаления события:", err);
         }
+    };
+
+    const handleLogout = async () => {
+        await signOut(auth);
     };
 
     const tileClassName = ({ date, view }: { date: Date; view: string }) => {
@@ -91,11 +117,16 @@ export default function App() {
                     case 'trip': return 'event-trip';
                     case 'concert': return 'event-concert';
                     case 'hiking': return 'event-hiking';
+                    case 'other': return 'event-other';
                 }
             }
         }
         return '';
     };
+
+    if (!user) {
+        return <Login onLogin={() => {}} />;
+    }
 
     return (
         <div className="columns is-gapless" style={{ height: '100vh' }}>
@@ -115,9 +146,12 @@ export default function App() {
 
             {/* Форма и список */}
             <div className="column is-half" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', height: '100%' }}>
+                <button onClick={handleLogout} className="button is-danger mb-4">
+                    Выйти
+                </button>
+
                 <form onSubmit={handleSubmit} className="box mb-4">
                     <h2 className="title is-5 mb-3">Добавить событие</h2>
-
                     <div className="field mb-2">
                         <div className="control">
                             <input

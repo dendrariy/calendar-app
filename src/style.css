@@ -54,7 +54,7 @@ body {
 
 /* Цвета событий */
 .event-trip {
-  background-color: #85bfff !important; /* светло-зелёный */
+  background-color: #85bfff !important;
   border-radius: 0.25rem;
 }
 
@@ -65,5 +65,10 @@ body {
 
 .event-hiking {
   background-color: #a0d995 !important;
+  border-radius: 0.25rem;
+}
+
+.event-other {
+  background-color: #c0c0c0 !important;
   border-radius: 0.25rem;
 }
