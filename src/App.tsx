@@ -6,21 +6,30 @@ import 'react-calendar/dist/Calendar.css';
 import './style.css';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 
+import { db } from './firebase';
+import {
+    collection,
+    addDoc,
+    deleteDoc,
+    doc,
+    onSnapshot,
+    query,
+    orderBy
+} from 'firebase/firestore';
+
 // Типы событий
 type EventType = "trip" | "concert" | "hiking";
-
 const eventTypes: { value: EventType; label: string }[] = [
     { value: "trip", label: "Поездка ✈️" },
     { value: "concert", label: "Концерт 🎵" },
     { value: "hiking", label: "Хайкинг 🥾" },
 ];
 
-// Интерфейс события
 interface EventItem {
-    id: number;
+    id: string; // Используем id от Firestore
     title: string;
-    startDate: string; // ISO string
-    endDate?: string;  // ISO string
+    startDate: string;
+    endDate?: string;
     note: string;
     type: EventType;
 }
@@ -37,39 +46,39 @@ export default function App() {
 
     const [selectedDate, setSelectedDate] = useState<CalendarProps['value']>(new Date());
 
-    // Загрузка из localStorage
+    // Подписка на события из Firestore
     useEffect(() => {
-        if (typeof localStorage !== 'undefined') {
-            const saved = localStorage.getItem('events');
-            if (saved) {
-                try {
-                    setEvents(JSON.parse(saved) as EventItem[]);
-                } catch (e) {
-                    console.error('Ошибка парсинга events из localStorage:', e);
-                }
-            }
-        }
+        const q = query(collection(db, "events"), orderBy("startDate"));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const items: EventItem[] = snapshot.docs.map(docSnap => ({
+                id: docSnap.id,
+                ...docSnap.data()
+            } as EventItem));
+            setEvents(items);
+        });
+        return () => unsubscribe();
     }, []);
 
-    // Сохранение в localStorage
-    useEffect(() => {
-        if (typeof localStorage !== 'undefined') {
-            localStorage.setItem('events', JSON.stringify(events));
-        }
-    }, [events]);
-
-    const handleSubmit = (e: FormEvent) => {
+    const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
         if (!form.title || !form.startDate) return;
-        setEvents([...events, { ...form, id: Date.now() }]);
-        setForm({ title: '', startDate: '', endDate: '', note: '', type: "trip" });
+
+        try {
+            await addDoc(collection(db, "events"), form);
+            setForm({ title: '', startDate: '', endDate: '', note: '', type: "trip" });
+        } catch (err) {
+            console.error("Ошибка добавления события:", err);
+        }
     };
 
-    const handleDelete = (id: number) => {
-        setEvents(events.filter(ev => ev.id !== id));
+    const handleDelete = async (id: string) => {
+        try {
+            await deleteDoc(doc(db, "events", id));
+        } catch (err) {
+            console.error("Ошибка удаления события:", err);
+        }
     };
 
-    // Подсветка дней с событиями по типу
     const tileClassName = ({ date, view }: { date: Date; view: string }) => {
         if (view === 'month') {
             const found = events.find(ev => {
@@ -90,7 +99,7 @@ export default function App() {
 
     return (
         <div className="columns is-gapless" style={{ height: '100vh' }}>
-            {/* Левая часть — календарь */}
+            {/* Календарь */}
             <div className="column is-half" style={{ padding: '1rem', height: '100%' }}>
                 <Calendar
                     onChange={(date) => {
@@ -104,9 +113,8 @@ export default function App() {
                 />
             </div>
 
-            {/* Правая часть — форма и список */}
+            {/* Форма и список */}
             <div className="column is-half" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', height: '100%' }}>
-                {/* Форма */}
                 <form onSubmit={handleSubmit} className="box mb-4">
                     <h2 className="title is-5 mb-3">Добавить событие</h2>
 
@@ -179,7 +187,6 @@ export default function App() {
                     </div>
                 </form>
 
-                {/* Список мероприятий */}
                 <div className="box events-list" style={{ flex: 1, overflowY: 'auto' }}>
                     <h2 className="title is-5 mb-3">Мероприятия</h2>
                     {events.length === 0 && <p className="has-text-grey">Нет событий</p>}
