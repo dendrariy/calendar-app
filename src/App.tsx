@@ -72,10 +72,10 @@ export default function App() {
             orderBy("startDate")
         );
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            const loadedEvents: EventItem[] = snapshot.docs.map((doc) => ({
-                id: doc.id,
-                ...(doc.data() as EventItem),
-            }));
+            const loadedEvents: EventItem[] = snapshot.docs.map((doc) => {
+                const data = doc.data() as Omit<EventItem, 'id'>;
+                return { id: doc.id, ...data };
+            });
             setEvents(loadedEvents);
         });
         return () => unsubscribe();
