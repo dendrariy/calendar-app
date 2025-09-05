@@ -35,6 +35,6 @@ body {
 }
 
 .has-background-primary-light {
-  background-color: #d1e7ff !important; /* светло-синий для событий */
+  background-color: #a0adba !important; /* светло-синий для событий */
   border-radius: 0.25rem;
 }
